@@ -113,3 +113,20 @@ body.night h1{color:#ffe7a8;text-shadow:none}
 }
 
 @media (max-width:900px){.logo{width:40px;height:40px}.tag{display:none}}
+
+/* 隊伍 */
+.labels>span .tc,.tc{display:inline-block;margin-left:3px;padding:0 4px;border-radius:7px;color:#fff;font-size:10px;line-height:15px;vertical-align:1px}
+.phead{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.phead .cnum{font-size:30px;min-width:70px;padding:6px 0}
+.phead .cnum small{display:block;font-size:11px;opacity:.7}
+.teamrows{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.trow{display:grid;grid-template-columns:1fr 40px 34px 40px;align-items:center;gap:6px}
+.trow b{text-align:center;font-size:20px;font-weight:400}
+.btn.sm{padding:6px 0;font-size:17px;border-radius:12px}
+.tname{display:flex;align-items:center;gap:6px;font-size:14px}
+.tname i{width:12px;height:12px;border-radius:4px;display:inline-block}
+.teamstats{grid-column:1/-1;list-style:none;padding:0;margin:2px 0 4px;display:flex;flex-direction:column;gap:6px;font-size:14px}
+.teamstats li{display:grid;grid-template-columns:1fr 64px 52px;gap:6px;color:var(--muted)}
+.teamstats li .tname{color:var(--ink)}
+.teamstats li span:not(.tname){text-align:right}
+.legend .lsep{color:var(--muted)}
