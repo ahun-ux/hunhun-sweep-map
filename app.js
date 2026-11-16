@@ -3,8 +3,8 @@ import { MapControls } from "./vendor/MapControls.js";
 
 // ===== 設定 =====
 const API = "/api/progress";
-const LEVELS = ["#fff09a", "#ffd166", "#ffab4c", "#ff7f66", "#ff6aa8", "#b58cff"]; // 1..6+
-const UNLIT = "#9fbf86";
+const LEVELS = ["#cfe9b4", "#a8dc86", "#7fc863", "#57b047", "#3a933a", "#25752c"]; // 1..6+ 越掃越綠
+const UNLIT = "#e4e2da"; // 未掃：灰白色
 const TOWNS = { "馬公市": "#f0a95a", "湖西鄉": "#4fd08a", "白沙鄉": "#f39ad2", "西嶼鄉": "#e6d36a", "望安鄉": "#3fae5c", "七美鄉": "#c9cf1a" };
 const ROOFS = ["#d9674e", "#3f8f93", "#e0a03a", "#6b6bb0", "#5a9a5a", "#c75b6b"];
 const WALLS = ["#7c8794", "#8d8f80", "#7a7f8f", "#9a9486"];
@@ -19,6 +19,15 @@ let state = { visits: {} };
 let mode = "remote", editKey = localStorage.getItem("sweepKey") || "", unlocked = false;
 let selected = null, showLabels = true, night = false;
 const count = v => (state.visits[v.key] || []).length;
+const TEAMS = [
+  { id: "hun", name: "魂魂隊", short: "魂", color: "#ee8447" },
+  { id: "hong", name: "阿宏隊", short: "宏", color: "#2f9e5a" },
+  { id: "home", name: "家戶拜訪隊", short: "家", color: "#e07aa8" },
+];
+const teamById = Object.fromEntries(TEAMS.map(t => [t.id, t]));
+const teamOf = x => (teamById[x.tm] ? x.tm : "hun");
+const countT = (v, id) => (state.visits[v.key] || []).filter(x => teamOf(x) === id).length;
+const chip = id => `<span class="tc" style="background:${teamById[id].color}">${teamById[id].short}</span>`;
 const $ = s => document.querySelector(s);
 
 // ===== Three.js 場景 =====
@@ -145,6 +154,10 @@ const G = {
   leaf: new THREE.ConeGeometry(0.5, 2.0, 3).rotateX(Math.PI / 2).scale(1, 0.25, 1),
   bush: new THREE.IcosahedronGeometry(0.7, 0),
 };
+G.pole = new THREE.CylinderGeometry(0.07, 0.07, 3.2, 5);
+G.flag = new THREE.BoxGeometry(1.4, 0.85, 0.06);
+G.tip = new THREE.IcosahedronGeometry(0.14, 0);
+const M_POLE = mat("#f4f1e8");
 const M_TRUNK = mat("#7a5a3c"), M_LEAF = mat("#3f8a4a"), M_BUSH = mat("#4f8f4a"), M_DOOR = mat("#3b3530");
 const M_WIN = new THREE.MeshStandardMaterial({ color: "#ffe9a0", emissive: "#ffcf5a", emissiveIntensity: 0.6 });
 const roofMats = ROOFS.map(c => mat(c)), wallMats = WALLS.map(c => mat(c));
@@ -171,6 +184,16 @@ function house(R) {
   return g;
 }
 
+const flagMats = {};
+function teamFlag(color) {
+  const g = new THREE.Group();
+  const pole = new THREE.Mesh(G.pole, M_POLE); pole.position.y = 1.6; g.add(pole);
+  const fm = flagMats[color] ||= mat(color);
+  const flag = new THREE.Mesh(G.flag, fm); flag.position.set(0.7, 2.75, 0); g.add(flag);
+  const tip = new THREE.Mesh(G.tip, M_POLE); tip.position.y = 3.3; g.add(tip);
+  g.traverse(o => { o.castShadow = true; });
+  return g;
+}
 function rebuildDecor(v) {
   v.decor.clear();
   const n = count(v), y = 0.2 + v.targetH;
@@ -180,6 +203,13 @@ function rebuildDecor(v) {
   hs.forEach(([x, z, r]) => { const h = house(R); h.position.set(x - CX, y, z - CZ); h.rotation.y = Math.floor(r * 4) * Math.PI / 2 + (r - 0.5) * 0.4; h.scale.setScalar(0.85 + r * 0.3); v.decor.add(h); });
   const nPalm = Math.min(4, Math.max(v.area > 6 ? 1 : 0, Math.floor(v.area / 30)));
   spots(v, nPalm, 2.2, hs).forEach(([x, z, r]) => { const p = palm(R); p.position.set(x - CX, y, z - CZ); p.scale.setScalar(0.65 + r * 0.35); v.decor.add(p); });
+  // 各隊旗子
+  const flagTeams = TEAMS.filter(T => countT(v, T.id) > 0);
+  if (flagTeams.length) {
+    let fs = spots(v, flagTeams.length, 1.4, hs);
+    while (fs.length < flagTeams.length) fs.push([v.cx + (fs.length - 1) * 1.2, v.cy + 0.8, 0.5]);
+    flagTeams.forEach((T, i) => { const f = teamFlag(T.color); f.position.set(fs[i][0] - CX, y, fs[i][1] - CZ); f.rotation.y = (fs[i][2] - 0.5) * 1.2; v.decor.add(f); });
+  }
   if (!n && v.area > 14) spots(v, 2, 2, hs).forEach(([x, z, r]) => { const b = new THREE.Mesh(G.bush, M_BUSH); b.position.set(x - CX, y + 0.4, z - CZ); b.scale.setScalar(0.7 + r * 0.6); b.castShadow = true; v.decor.add(b); });
   v.decor.userData.baseY = y;
   v.decor.traverse(o => { o.userData.v = v; });
@@ -227,13 +257,13 @@ function makeHun() {
   const g = new THREE.Group(), body = new THREE.Group(); g.add(body);
   const leg = x => { const p = new THREE.Group(); p.position.set(x, 1.1, 0); p.add(box(0.42, 1.1, 0.45, "#1d3557", 0, -0.55, 0), box(0.46, 0.2, 0.6, "#3a2c2a", 0, -1.0, 0.06)); body.add(p); return p; };
   const legL = leg(-0.26), legR = leg(0.26); // 腿（可以擺動）
-  body.add(box(1.35, 1.45, 0.8, "#4aa2da", 0, 1.8, 0));        // 藍外套
+  body.add(box(1.35, 1.45, 0.8, "#ee8447", 0, 1.8, 0));        // 橘外套
   body.add(box(0.5, 1.3, 0.05, "#1d3557", 0, 1.85, 0.41));      // 深藍襯衫
   body.add(box(0.16, 1.3, 0.06, "#d6d64c", -0.3, 1.85, 0.42), box(0.16, 1.3, 0.06, "#d6d64c", 0.3, 1.85, 0.42)); // 黃綠翻領
   body.add(box(0.3, 0.3, 0.06, "#d6d64c", 0.45, 1.75, 0.42));   // 口袋
   body.add(box(0.18, 0.18, 0.07, "#f0b04a", 0.38, 2.15, 0.43)); // 橘貓胸針
-  const armL = box(0.34, 1.25, 0.4, "#4aa2da", 0, -0.55, 0); const shL = new THREE.Group(); shL.position.set(-0.85, 2.4, 0); shL.add(armL, box(0.3, 0.22, 0.36, "#e07aa8", 0, -1.25, 0), box(0.26, 0.26, 0.3, "#efc4b6", 0, -1.45, 0)); body.add(shL);
-  const armR = box(0.34, 1.25, 0.4, "#4aa2da", 0, -0.55, 0); const shR = new THREE.Group(); shR.position.set(0.85, 2.4, 0); shR.add(armR, box(0.3, 0.22, 0.36, "#e07aa8", 0, -1.25, 0), box(0.26, 0.26, 0.3, "#efc4b6", 0, -1.45, 0)); body.add(shR);
+  const armL = box(0.34, 1.25, 0.4, "#ee8447", 0, -0.55, 0); const shL = new THREE.Group(); shL.position.set(-0.85, 2.4, 0); shL.add(armL, box(0.3, 0.22, 0.36, "#e07aa8", 0, -1.25, 0), box(0.26, 0.26, 0.3, "#efc4b6", 0, -1.45, 0)); body.add(shL);
+  const armR = box(0.34, 1.25, 0.4, "#ee8447", 0, -0.55, 0); const shR = new THREE.Group(); shR.position.set(0.85, 2.4, 0); shR.add(armR, box(0.3, 0.22, 0.36, "#e07aa8", 0, -1.25, 0), box(0.26, 0.26, 0.3, "#efc4b6", 0, -1.45, 0)); body.add(shR);
   const head = new THREE.Group(); head.position.y = 3.25; body.add(head);
   head.add(box(1.05, 1.1, 1.0, "#efc4b6", 0, 0, 0));                         // 臉
   head.add(box(1.15, 0.4, 1.1, "#22301d", 0, 0.62, -0.02));                  // 頭髮
@@ -264,37 +294,169 @@ function makeCat(color, stripe) {
 const hun = makeHun(); scene.add(hun);
 const cats = [makeCat("#f0b04a", "#d98a2a"), makeCat("#8a8a8f"), makeCat("#7993a5")];
 cats.forEach((c, i) => { c.userData.phase = i * 2.1; c.scale.setScalar(1.3); scene.add(c); });
-let hunAt = null, hunPos = new THREE.Vector3(), hunGoal = null, hunWait = 1, hunDir = 0, walkPhase = 0, swing = 0;
-let hunJump = 0; const jumpFrom = new THREE.Vector3(), jumpTo = new THREE.Vector3();
-cats.forEach(c => { c.userData.pos = new THREE.Vector3(); c.userData.dir = 0; c.userData.walk = 0; });
-function latestVillage() {
-  let best = null, bt = -1;
-  M.villages.forEach(v => (state.visits[v.key] || []).forEach(x => { if ((x.t || 0) > bt) { bt = x.t || 0; best = v; } }));
-  return best || vByName("市區");
+// ===== 陸地查詢格（讓角色可以在整座島上走） =====
+const vGrid = [], land = [];
+function buildGrids() {
+  for (let y = 0; y < M.h; y++) { vGrid.push(new Array(M.w).fill(null)); land.push(new Array(M.w).fill(false)); }
+  M.villages.forEach(v => {
+    const [x0, x1, y0, y1] = bbox(v);
+    for (let y = Math.max(0, Math.floor(y0)); y <= Math.min(M.h - 1, Math.ceil(y1)); y++)
+      for (let x = Math.max(0, Math.floor(x0)); x <= Math.min(M.w - 1, Math.ceil(x1)); x++)
+        if (!vGrid[y][x] && inside(v, x + 0.5, y + 0.5)) vGrid[y][x] = v;
+  });
+  for (let y = 0; y < M.h; y++) for (let x = 0; x < M.w; x++) {
+    if (vGrid[y][x]) { land[y][x] = true; continue; }
+    let n = 0; for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) if (vGrid[y + dy]?.[x + dx]) n++;
+    land[y][x] = n >= 3; // 村里之間的小縫也算陸地
+  }
 }
 function bbox(v) {
   if (!v.bb) { const xs = v.poly.flatMap(p => p[0].map(q => q[0])), ys = v.poly.flatMap(p => p[0].map(q => q[1])); v.bb = [Math.min(...xs), Math.max(...xs), Math.min(...ys), Math.max(...ys)]; }
   return v.bb;
 }
-// 在村里裡找一個走得到的點（直線上都在村里內）
-function pickGoal(v) {
-  const [x0, x1, y0, y1] = bbox(v);
-  const sx = hunPos.x + CX, sy = hunPos.z + CZ;
+buildGrids();
+const cellAt = (wx, wz) => [Math.floor(wx + CX), Math.floor(wz + CZ)];
+function villageAt(wx, wz) { const [x, y] = cellAt(wx, wz); return vGrid[y]?.[x] || null; }
+function isLand(wx, wz) { const [x, y] = cellAt(wx, wz); return !!land[y]?.[x]; }
+function groundAt(wx, wz, fallback) {
+  const [x, y] = cellAt(wx, wz); let v = vGrid[y]?.[x];
+  if (!v) for (const [dx, dy] of [[1, 0], [-1, 0], [0, 1], [0, -1], [1, 1], [-1, -1], [1, -1], [-1, 1]]) { v = vGrid[y + dy]?.[x + dx]; if (v) break; }
+  return v ? 0.2 + v.h : fallback;
+}
+function solid(wx, wz, m) { return villageAt(wx, wz) && isLand(wx + m, wz) && isLand(wx - m, wz) && isLand(wx, wz + m) && isLand(wx, wz - m); }
+// 找一個走得到的目的地（路上都是陸地）
+function pickGoalFree(pos, range, margin = 0.6) {
   for (let i = 0; i < 40; i++) {
-    const r = Math.min(12, Math.max(x1 - x0, y1 - y0) / 2) * (0.3 + Math.random() * 0.7), a = Math.random() * Math.PI * 2;
-    const gx = sx + Math.cos(a) * r, gy = sy + Math.sin(a) * r;
-    let ok = true;
-    for (let k = 1; k <= 8 && ok; k++) { const t = k / 8, px = sx + (gx - sx) * t, py = sy + (gy - sy) * t; if (!inside(v, px, py) || !inside(v, px + 0.6, py) || !inside(v, px - 0.6, py) || !inside(v, px, py + 0.6) || !inside(v, px, py - 0.6)) ok = false; }
-    if (ok) return new THREE.Vector3(gx - CX, 0, gy - CZ);
+    const r = range * (0.25 + Math.random() * 0.75), ang = Math.random() * Math.PI * 2;
+    const gx = pos.x + Math.cos(ang) * r, gz = pos.z + Math.sin(ang) * r;
+    if (!solid(gx, gz, margin)) continue;
+    const steps = Math.ceil(r / 0.5); let ok = true;
+    for (let k = 1; k < steps && ok; k++) { const t = k / steps; if (!isLand(pos.x + (gx - pos.x) * t, pos.z + (gz - pos.z) * t)) ok = false; }
+    if (ok) return new THREE.Vector3(gx, 0, gz);
   }
   return null;
 }
-function moveHun(v, instant) {
-  if (!v) return;
-  const changed = hunAt !== v; hunAt = v; hunGoal = null;
-  const home = new THREE.Vector3(v.cx - CX, 0, v.cy - CZ);
-  if (instant) { hunPos.copy(home); cats.forEach((c, i) => c.userData.pos.set(home.x - 2 - i, 0, home.z + 1.5)); }
-  else if (changed) { jumpFrom.copy(hunPos); jumpTo.copy(home); hunJump = 1; }
+// 通用的「走路的人」：目的地 → 走過去 → 休息
+function stepWalker(a, dt) {
+  let moving = false;
+  if (!a.goal) {
+    a.wait -= dt;
+    if (a.wait <= 0) { a.goal = pickGoalFree(a.pos, a.range, a.margin); if (!a.goal) a.wait = 0.4; }
+  } else {
+    const dx = a.goal.x - a.pos.x, dz = a.goal.z - a.pos.z, d = Math.hypot(dx, dz);
+    if (d < 0.2) { a.goal = null; a.wait = a.restMin + Math.random() * a.restVar; }
+    else {
+      const st = Math.min(d, a.speed * dt), nx = a.pos.x + dx / d * st, nz = a.pos.z + dz / d * st;
+      if (isLand(nx, nz)) { a.pos.x = nx; a.pos.z = nz; a.wantDir = Math.atan2(dx, dz); moving = true; } else a.goal = null;
+    }
+  }
+  let dd = a.wantDir - a.dir; dd = Math.atan2(Math.sin(dd), Math.cos(dd)); a.dir += dd * Math.min(1, dt * 8);
+  a.gy += (groundAt(a.pos.x, a.pos.z, a.gy) - a.gy) * Math.min(1, dt * 10);
+  return moving;
+}
+function limbSwing(u, a, moving, dt, speed = 9) {
+  if (moving) a.phase += dt * speed;
+  a.swing += ((moving ? Math.sin(a.phase) * 0.65 : 0) - a.swing) * Math.min(1, dt * 12);
+  u.legL.rotation.x = a.swing; u.legR.rotation.x = -a.swing;
+  return moving ? Math.abs(Math.sin(a.phase)) * 0.16 : 0;
+}
+
+// ===== 小魂魂（帶著貓在整座島上閒逛） =====
+const hunA = { pos: new THREE.Vector3(), goal: null, wait: 1, dir: 0, wantDir: 0, gy: 2.4, phase: 0, swing: 0, speed: 2.4, range: 16, margin: 0.6, restMin: 1, restVar: 3 };
+let hunReady = false, hunJump = 0, lastHunT = -1; const jumpFrom = new THREE.Vector3(), jumpTo = new THREE.Vector3();
+cats.forEach(c => { c.userData.pos = new THREE.Vector3(); c.userData.dir = 0; c.userData.walk = 0; c.userData.gy = 2.4; });
+function latestHun() {
+  let best = null, bt = -1;
+  M.villages.forEach(v => (state.visits[v.key] || []).forEach(x => { if (teamOf(x) === "hun" && (x.t || 0) > bt) { bt = x.t || 0; best = v; } }));
+  return [best, bt];
+}
+// 有新的魂魂隊紀錄 → 跳過去；其他時候自由閒逛
+function updateHun() {
+  const [v, t] = latestHun();
+  const home = v || vByName("市區");
+  if (!hunReady) {
+    hunReady = true; lastHunT = t;
+    hunA.pos.set(home.cx - CX, 0, home.cy - CZ); hunA.gy = groundAt(hunA.pos.x, hunA.pos.z, 2.4);
+    cats.forEach((c, i) => { c.userData.pos.set(hunA.pos.x - 1.5 - i, 0, hunA.pos.z + 1.5); c.userData.gy = hunA.gy; });
+    return;
+  }
+  if (v && t > lastHunT) { lastHunT = t; jumpFrom.copy(hunA.pos); jumpTo.set(v.cx - CX, 0, v.cy - CZ); hunJump = 1; hunA.goal = null; }
+}
+
+// ===== 文宣小小兵 =====
+function makePerson(shirt, opts = {}) {
+  const g = new THREE.Group(), body = new THREE.Group(); g.add(body);
+  const leg = x => { const p = new THREE.Group(); p.position.set(x, 0.85, 0); p.add(box(0.32, 0.85, 0.34, opts.pants || "#3b4a63", 0, -0.42, 0), box(0.34, 0.16, 0.46, "#2f2a28", 0, -0.78, 0.05)); body.add(p); return p; };
+  const legL = leg(-0.2), legR = leg(0.2);
+  body.add(box(1.0, 1.05, 0.62, shirt, 0, 1.35, 0));                 // 隊服
+  body.add(box(1.02, 0.2, 0.64, "#ffffff", 0, 1.55, 0));             // 白色條紋
+  const arm = x => { const p = new THREE.Group(); p.position.set(x, 1.8, 0); p.add(box(0.26, 0.9, 0.3, shirt, 0, -0.42, 0), box(0.22, 0.22, 0.24, "#efc4b6", 0, -0.95, 0)); body.add(p); return p; };
+  const shL = arm(-0.64), shR = arm(0.64);
+  const head = new THREE.Group(); head.position.y = 2.35; body.add(head);
+  head.add(box(0.78, 0.78, 0.74, "#efc4b6"));
+  head.add(box(0.84, 0.22, 0.8, opts.cap || shirt, 0, 0.44, 0), box(0.84, 0.06, 0.4, opts.cap || shirt, 0, 0.34, 0.5)); // 鴨舌帽
+  head.add(box(0.1, 0.12, 0.03, "#2a2a2a", -0.17, 0.02, 0.38), box(0.1, 0.12, 0.03, "#2a2a2a", 0.17, 0.02, 0.38));
+  g.userData = { body, legL, legR, shL, shR, head };
+  return g;
+}
+function makeScooter(color, rider) {
+  const g = new THREE.Group();
+  const wheel = z => { const w = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.28, 10).rotateZ(Math.PI / 2), mat("#222")); w.position.set(0, 0.42, z); w.castShadow = true; return w; };
+  const wf = wheel(1.05), wb = wheel(-0.95); g.add(wf, wb);
+  g.add(box(0.7, 0.45, 2.0, color, 0, 0.75, -0.1));           // 車身
+  g.add(box(0.72, 0.18, 1.0, "#2a2a2a", 0, 1.05, -0.45));     // 座墊
+  g.add(box(0.6, 1.1, 0.22, color, 0, 1.15, 0.85));            // 前面板
+  g.add(box(1.2, 0.1, 0.1, "#333", 0, 1.75, 0.8));             // 把手
+  g.add(box(0.3, 0.2, 0.08, "#fff6c0", 0, 1.45, 0.98));        // 大燈
+  const p = rider; p.position.set(0, 0.25, -0.35); g.add(p);
+  const u = p.userData;
+  u.legL.rotation.x = u.legR.rotation.x = -1.35;               // 坐著
+  u.shL.rotation.x = u.shR.rotation.x = -1.1;                  // 手握把手
+  u.head.add(box(0.9, 0.5, 0.86, "#ffffff", 0, 0.32, 0));      // 安全帽
+  g.userData.wheels = [wf, wb];
+  return g;
+}
+const minions = [];
+{
+  const R = rng("minions-v1");
+  const big = M.villages.filter(v => v.area > 25);
+  const mid = M.villages.filter(v => v.area > 8);
+  const kinds = ["walk", "walk", "scooter", "walk", "walk", "scooter", "walk", "walk", "scooter"];
+  const GREEN = "#3fae5c", SCOOTERS = ["#f4f1e8", "#d9534f", "#f2c14e"];
+  kinds.forEach((kind, i) => {
+    const pool = kind === "scooter" ? big : mid;
+    const v = pool[Math.floor(R() * pool.length)];
+    let mesh;
+    if (kind === "scooter") mesh = makeScooter(SCOOTERS[Math.floor(i / 3) % SCOOTERS.length], makePerson(GREEN));
+    else {
+      mesh = makePerson(GREEN);
+      const paper = box(0.42, 0.06, 0.32, "#ffffff", 0, -1.02, 0.18); mesh.userData.shL.add(paper); // 手上的傳單
+    }
+    mesh.traverse(o => { if (o.isMesh) o.castShadow = true; });
+    mesh.scale.setScalar(kind === "scooter" ? 1.15 : 1.2);
+    scene.add(mesh);
+    const a = { kind, mesh, pos: new THREE.Vector3(v.cx - CX + (R() - 0.5), 0, v.cy - CZ + (R() - 0.5)), goal: null, wait: R() * 3, dir: R() * 6, wantDir: 0, gy: 2.4, phase: R() * 6, swing: 0,
+      speed: kind === "scooter" ? 6.5 : 2.1, range: kind === "scooter" ? 30 : 14, margin: kind === "scooter" ? 1.0 : 0.5, restMin: kind === "scooter" ? 0.5 : 1.5, restVar: kind === "scooter" ? 1.5 : 4 };
+    a.wantDir = a.dir;
+    minions.push(a);
+  });
+}
+function animateMinions(dt, t) {
+  minions.forEach((a, i) => {
+    const moving = stepWalker(a, dt), m = a.mesh, u = m.userData;
+    let bob = 0;
+    if (a.kind === "scooter") {
+      u.wheels.forEach(w => { if (moving) w.rotation.x += dt * 14; });
+      bob = moving ? Math.sin(t * 20 + i) * 0.03 : 0;
+    } else {
+      bob = limbSwing(u, a, moving, dt);
+      u.shR.rotation.x = a.swing * 0.9;
+      u.shL.rotation.x = moving ? -0.6 : -1.2 + Math.sin(t * 3 + i) * 0.15; // 停下來就把傳單遞出去
+      u.head.rotation.y = moving ? 0 : Math.sin(t * 0.9 + i) * 0.5;
+    }
+    m.position.set(a.pos.x, a.gy + bob, a.pos.z);
+    m.rotation.y = a.dir;
+  });
 }
 
 // 雲
@@ -337,7 +499,7 @@ M.villages.forEach(v => { const s = document.createElement("span"); labelsEl.app
 function renderLabels() {
   labelEls.forEach((s, v) => {
     const n = count(v);
-    s.innerHTML = v.name + (n ? `<span class="n">${n}</span>` : "");
+    s.innerHTML = v.name + TEAMS.map(T => { const k = countT(v, T.id); return k ? `<span class="tc" style="background:${T.color}">${T.short}${k}</span>` : ""; }).join("");
     s.classList.toggle("sel", v === selected);
     s._w = 0;
   });
@@ -416,50 +578,44 @@ function loop() {
   spinners.forEach((s, i) => s.rotation.z += dt * (1.6 + i * 0.2));
   if (beam) beam.rotation.y += dt * 0.8;
   if (selected) { pin.visible = true; pin.position.set(selected.cx - CX, 0.2 + selected.h + 3 + Math.abs(Math.sin(t * 3)) * 1.2, selected.cy - CZ); pin.rotation.y = t; } else pin.visible = false;
-  if (hunAt) {
-    const u = hun.userData, ground = 0.2 + hunAt.h;
-    let moving = false, air = 0, wantDir = hunDir;
-    if (hunJump > 0) { // 跳到新的村里
+  if (hunReady) {
+    const u = hun.userData;
+    let moving = false, air = 0;
+    if (hunJump > 0) { // 魂魂隊有新紀錄 → 跳過去
       hunJump = Math.max(0, hunJump - dt * 0.7);
       const k = 1 - hunJump;
-      hunPos.lerpVectors(jumpFrom, jumpTo, k);
+      hunA.pos.lerpVectors(jumpFrom, jumpTo, k);
       air = Math.sin(k * Math.PI) * Math.min(10, 2 + jumpFrom.distanceTo(jumpTo) * 0.15);
-      wantDir = Math.atan2(jumpTo.x - jumpFrom.x, jumpTo.z - jumpFrom.z);
-      if (hunJump === 0) hunWait = 0.6;
-    } else if (!hunGoal) {
-      hunWait -= dt;
-      if (hunWait <= 0) { hunGoal = pickGoal(hunAt); if (!hunGoal) hunWait = 1; }
-    } else {
-      const dx = hunGoal.x - hunPos.x, dz = hunGoal.z - hunPos.z, d = Math.hypot(dx, dz);
-      if (d < 0.15) { hunGoal = null; hunWait = 1 + Math.random() * 3; }
-      else { const step = Math.min(d, 2.4 * dt); hunPos.x += dx / d * step; hunPos.z += dz / d * step; wantDir = Math.atan2(dx, dz); moving = true; }
-    }
-    let dd = wantDir - hunDir; dd = Math.atan2(Math.sin(dd), Math.cos(dd)); hunDir += dd * Math.min(1, dt * 8);
-    if (moving) walkPhase += dt * 9;
-    swing += ((moving ? Math.sin(walkPhase) * 0.65 : 0) - swing) * Math.min(1, dt * 12);
-    u.legL.rotation.x = swing; u.legR.rotation.x = -swing;
-    u.shL.rotation.x = -swing * 0.9; u.shR.rotation.x = swing * 0.9;
-    u.shL.rotation.z = -0.08; u.shR.rotation.z = hunJump > 0 ? 2.6 : 0.08; // 跳的時候舉手
+      hunA.wantDir = Math.atan2(jumpTo.x - jumpFrom.x, jumpTo.z - jumpFrom.z);
+      let dd = hunA.wantDir - hunA.dir; dd = Math.atan2(Math.sin(dd), Math.cos(dd)); hunA.dir += dd * Math.min(1, dt * 8);
+      hunA.gy += (groundAt(hunA.pos.x, hunA.pos.z, hunA.gy) - hunA.gy) * Math.min(1, dt * 6);
+      if (hunJump === 0) hunA.wait = 1;
+    } else moving = stepWalker(hunA, dt);
+    const bob = limbSwing(u, hunA, moving, dt);
+    u.shL.rotation.x = -hunA.swing * 0.9; u.shR.rotation.x = hunA.swing * 0.9;
+    u.shL.rotation.z = -0.08; u.shR.rotation.z = hunJump > 0 ? 2.6 : 0.08;
     u.head.rotation.y = moving ? 0 : Math.sin(t * 0.8) * 0.4;
-    const bob = moving ? Math.abs(Math.sin(walkPhase)) * 0.18 : Math.sin(t * 2) * 0.03;
-    hun.position.set(hunPos.x, ground + bob + air, hunPos.z);
-    hun.rotation.y = hunDir;
+    hun.position.set(hunA.pos.x, hunA.gy + (moving ? bob : Math.sin(t * 2) * 0.03) + air, hunA.pos.z);
+    hun.rotation.y = hunA.dir;
     // 貓咪跟在後面
-    const fx = Math.sin(hunDir), fz = Math.cos(hunDir);
+    const fx = Math.sin(hunA.dir), fz = Math.cos(hunA.dir);
     cats.forEach((c, i) => {
       const cu = c.userData, side = (i - 1) * 1.3, back = 2.2 + i * 1.1;
-      const tx = hunPos.x - fx * back + fz * side, tz = hunPos.z - fz * back - fx * side;
+      let tx = hunA.pos.x - fx * back + fz * side, tz = hunA.pos.z - fz * back - fx * side;
+      if (!isLand(tx, tz)) { tx = hunA.pos.x - fx * 1.2; tz = hunA.pos.z - fz * 1.2; }
       const dx = tx - cu.pos.x, dz = tz - cu.pos.z, d = Math.hypot(dx, dz);
       let catMoving = false;
-      if (d > 0.4) { const sp = Math.max(2.8, d * 2.2); const st = Math.min(d, sp * dt); cu.pos.x += dx / d * st; cu.pos.z += dz / d * st; catMoving = true;
+      if (d > 0.4) { const sp = Math.max(2.8, d * 2.2), st = Math.min(d, sp * dt); cu.pos.x += dx / d * st; cu.pos.z += dz / d * st; catMoving = true;
         let cd = Math.atan2(dx, dz) - Math.PI / 2 - cu.dir; cd = Math.atan2(Math.sin(cd), Math.cos(cd)); cu.dir += cd * Math.min(1, dt * 10); }
       if (catMoving) cu.walk += dt * 14;
+      cu.gy += (groundAt(cu.pos.x, cu.pos.z, cu.gy) - cu.gy) * Math.min(1, dt * 10);
       const far = d > 6 ? Math.min(4, d * 0.3) : 0;
-      c.position.set(cu.pos.x, ground + (catMoving ? Math.abs(Math.sin(cu.walk)) * 0.3 : 0) + far, cu.pos.z);
+      c.position.set(cu.pos.x, cu.gy + (catMoving ? Math.abs(Math.sin(cu.walk)) * 0.3 : 0) + far, cu.pos.z);
       c.rotation.y = cu.dir;
       cu.tail.rotation.x = Math.sin(t * 4 + i) * 0.4;
     });
   }
+  animateMinions(dt, t);
   clouds.forEach(c => { c.position.x += c.userData.sp; if (c.position.x > 140) c.position.x = -140; });
   // 鏡頭飛行
   if (fly) {
@@ -492,21 +648,24 @@ function select(v, move = true) {
 function renderPanel() {
   const el = $("#panel");
   if (!selected) { el.innerHTML = `<p class="hint">點島上的村里，或用下面搜尋。</p>`; return; }
-  const v = selected, list = state.visits[v.key] || [], n = list.length;
+  const v = selected, list = state.visits[v.key] || [], n = list.length, dis = !canEdit() ? "disabled" : "";
   el.innerHTML = `
-    <p class="vname">${v.name}</p><div class="vtown">${v.town}</div>
-    <div class="counter">
-      <button class="btn pink" id="minus" ${!canEdit() || !n ? "disabled" : ""}>－1</button>
-      <div class="cnum" style="background:${colorOf(v)}">${n}</div>
-      <button class="btn mint" id="plus" ${!canEdit() ? "disabled" : ""}>＋1</button>
-    </div>
-    <div class="dateRow">日期 <input type="date" id="vdate" value="${today()}" ${!canEdit() ? "disabled" : ""}></div>
+    <div class="phead"><div><p class="vname">${v.name}</p><div class="vtown">${v.town}</div></div>
+      <div class="cnum" style="background:${colorOf(v)};color:${n >= 4 ? "#fff" : "var(--ink)"}"><small>合計</small>${n}</div></div>
+    <div class="teamrows">${TEAMS.map(T => { const k = countT(v, T.id); return `
+      <div class="trow"><span class="tname"><i style="background:${T.color}"></i>${T.name}</span>
+        <button class="btn sm pink" data-minus="${T.id}" ${dis || (!k ? "disabled" : "")}>－</button>
+        <b>${k}</b>
+        <button class="btn sm mint" data-plus="${T.id}" ${dis}>＋</button></div>`; }).join("")}</div>
+    <div class="dateRow">日期 <input type="date" id="vdate" value="${today()}" ${dis}></div>
     ${!canEdit() ? `<p class="locked-note">🔒 按右上「編輯」解鎖才能記錄</p>` : ""}
     <ul class="visits">${list.map((x, i) => ({ ...x, i })).reverse().map(x =>
-      `<li><span>第 ${x.i + 1} 次・${x.d}</span>${canEdit() ? `<a href="#" data-del="${x.i}" title="刪除">✕</a>` : ""}</li>`).join("")}</ul>`;
-  const plus = $("#plus"), minus = $("#minus");
-  plus && (plus.onclick = () => act({ action: "add", key: v.key, date: $("#vdate").value || today() }));
-  minus && (minus.onclick = () => act({ action: "remove", key: v.key, index: n - 1 }));
+      `<li><span>${chip(teamOf(x))} ${x.d}</span>${canEdit() ? `<a href="#" data-del="${x.i}" title="刪除">✕</a>` : ""}</li>`).join("")}</ul>`;
+  el.querySelectorAll("[data-plus]").forEach(b => b.onclick = () => act({ action: "add", key: v.key, team: b.dataset.plus, date: $("#vdate").value || today() }));
+  el.querySelectorAll("[data-minus]").forEach(b => b.onclick = () => {
+    const id = b.dataset.minus; let idx = -1; list.forEach((x, i) => { if (teamOf(x) === id) idx = i; });
+    if (idx >= 0) act({ action: "remove", key: v.key, index: idx, team: id });
+  });
   el.querySelectorAll("[data-del]").forEach(a => a.onclick = e => {
     e.preventDefault(); if (confirm("刪除這筆紀錄？")) act({ action: "remove", key: v.key, index: +a.dataset.del });
   });
@@ -521,18 +680,23 @@ function renderStats() {
     const vs = M.villages.filter(v => v.town === t), l = vs.filter(v => count(v) > 0).length;
     return `<li><span>${t}</span><div class="tb"><div style="width:${l / vs.length * 100}%;--c:${TOWNS[t]}"></div></div><span class="num">${l}/${vs.length}</span></li>`;
   }).join("");
+  $("#teamStats").innerHTML = TEAMS.map(T => {
+    const vs = M.villages.filter(v => countT(v, T.id) > 0).length, sw = M.villages.reduce((s, v) => s + countT(v, T.id), 0);
+    return `<li><span class="tname"><i style="background:${T.color}"></i>${T.name}</span><span>${vs} 村里</span><span>${sw} 次</span></li>`;
+  }).join("");
   const rec = [];
   M.villages.forEach(v => (state.visits[v.key] || []).forEach((x, i) => rec.push({ v, ...x, i })));
   rec.sort((a, b) => (b.t || 0) - (a.t || 0) || b.d.localeCompare(a.d));
   $("#recent").innerHTML = rec.length ? rec.slice(0, 40).map(r =>
-    `<li data-k="${r.v.id}"><span>${r.v.name} <small>第${r.i + 1}次</small></span><small>${r.d}</small></li>`).join("")
+    `<li data-k="${r.v.id}"><span>${chip(teamOf(r))} ${r.v.name}</span><small>${r.d}</small></li>`).join("")
     : `<li class="empty">還沒有紀錄，出發掃街吧！</li>`;
   $("#recent").querySelectorAll("[data-k]").forEach(li => li.onclick = () => select(byId[li.dataset.k]));
 }
 $("#legend").innerHTML = `<span><i style="background:${UNLIT}"></i>未掃</span>` +
-  LEVELS.map((c, i) => `<span><i style="background:${c}"></i>${i + 1}${i === LEVELS.length - 1 ? "+" : ""}次</span>`).join("");
+  LEVELS.map((c, i) => `<span><i style="background:${c}"></i>${i + 1}${i === LEVELS.length - 1 ? "+" : ""}次</span>`).join("") +
+  `<span class="lsep">合計｜旗子＝</span>` + TEAMS.map(T => `<span><i style="background:${T.color}"></i>${T.name}</span>`).join("");
 
-function renderAll() { refreshAll(); renderStats(); renderLabels(); renderPanel(); moveHun(latestVillage(), !hunAt); }
+function renderAll() { refreshAll(); renderStats(); renderLabels(); renderPanel(); updateHun(); }
 
 // 搜尋
 const search = $("#search"), results = $("#results");
@@ -540,7 +704,7 @@ search.addEventListener("input", () => {
   const q = search.value.trim();
   if (!q) { results.innerHTML = ""; return; }
   const hits = M.villages.filter(v => v.name.includes(q) || v.town.includes(q)).slice(0, 30);
-  results.innerHTML = hits.map(v => `<li tabindex="0" data-k="${v.id}"><span>${v.name}</span><small>${v.town}・${count(v)} 次</small></li>`).join("") || `<li><small>找不到</small></li>`;
+  results.innerHTML = hits.map(v => `<li tabindex="0" data-k="${v.id}"><span>${v.name}</span><small>${v.town}・${TEAMS.map(T => T.short + countT(v, T.id)).join(" ")}</small></li>`).join("") || `<li><small>找不到</small></li>`;
   results.querySelectorAll("[data-k]").forEach(li => {
     li.onclick = () => { select(byId[li.dataset.k]); search.value = ""; results.innerHTML = ""; };
     li.onkeydown = e => e.key === "Enter" && li.click();
@@ -570,28 +734,38 @@ async function load() {
 }
 function applyLocal(a) {
   const list = state.visits[a.key] ||= [];
-  if (a.action === "add") list.push({ d: a.date, t: Date.now() });
+  if (a.action === "add") list.push({ d: a.date, t: Date.now(), tm: teamById[a.team] ? a.team : "hun" });
   if (a.action === "remove" && a.index >= 0) list.splice(a.index, 1);
   if (!list.length) delete state.visits[a.key];
   localStorage.setItem("sweepLocal", JSON.stringify(state));
 }
 async function act(a) {
-  const msg = a.action === "add" ? `💡 魂魂在${selected?.name || ""}點燈！` : "已移除";
+  const msg = a.action === "add" ? `💡 ${teamById[a.team]?.name || ""}在${selected?.name || ""}點燈！` : "已移除";
   if (mode === "local") { applyLocal(a); renderAll(); toast(msg); return; }
   setSync("busy", "儲存中");
   try {
-    const r = await fetch(API, { method: "POST", headers: { "content-type": "application/json", "x-edit-key": editKey }, body: JSON.stringify(a) });
+    const r = await fetch(API, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ...a, pw: editKey }) });
     if (r.status === 401) { unlocked = false; updateEditBtn(); toast("密碼失效，請重新解鎖"); setSync("err"); renderPanel(); return; }
     if (!r.ok) throw new Error(r.status);
     state = await r.json(); state.visits ||= {};
     setSync("ok", "已儲存"); renderAll(); toast(msg);
   } catch { setSync("err", "儲存失敗"); toast("儲存失敗，請檢查網路"); }
 }
+let lastKeyError = "";
 async function checkKey(key, silent) {
+  key = (key || "").trim();
+  lastKeyError = "";
   try {
-    const r = await fetch(API, { method: "POST", headers: { "content-type": "application/json", "x-edit-key": key }, body: JSON.stringify({ action: "check" }) });
+    const r = await fetch(API, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ action: "check", pw: key }) });
     unlocked = r.ok;
-  } catch { unlocked = false; }
+    if (!r.ok) {
+      let err = ""; try { err = (await r.json()).error; } catch {}
+      lastKeyError = r.status === 401 ? "密碼不對喔（請確認大小寫、全形半形）"
+        : err === "no_password" ? "後台還沒讀到 EDIT_PASSWORD：請確認已設定、Scopes 包含 Functions，並重新部署"
+        : r.status === 404 ? "找不到後端（netlify/functions/progress.mjs 可能沒有上傳）"
+        : `後端出錯（錯誤碼 ${r.status}），請到 Netlify 的 Functions 記錄查看`;
+    }
+  } catch (e) { unlocked = false; lastKeyError = "連線失敗，請檢查網路"; }
   if (unlocked) { editKey = key; localStorage.setItem("sweepKey", key); }
   else if (!silent) localStorage.removeItem("sweepKey");
   updateEditBtn(); return unlocked;
@@ -608,7 +782,7 @@ $("#editBtn").onclick = () => {
 };
 $("#pwOk").onclick = async e => {
   e.preventDefault();
-  if (await checkKey($("#pwInput").value)) { dlg.close(); renderPanel(); toast("🔓 已解鎖"); } else $("#pwErr").textContent = "密碼不對喔";
+  if (await checkKey($("#pwInput").value)) { dlg.close(); renderPanel(); toast("🔓 已解鎖"); } else $("#pwErr").textContent = lastKeyError || "密碼不對喔";
 };
 
 // 開始
