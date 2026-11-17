@@ -20,9 +20,10 @@ let mode = "remote", editKey = localStorage.getItem("sweepKey") || "", unlocked 
 let selected = null, showLabels = true, night = false;
 const count = v => (state.visits[v.key] || []).length;
 const TEAMS = [
-  { id: "hun", name: "魂魂隊", short: "魂", color: "#ee8447" },
-  { id: "hong", name: "阿宏隊", short: "宏", color: "#2f9e5a" },
-  { id: "home", name: "家戶拜訪隊", short: "家", color: "#e07aa8" },
+  { id: "hun", name: "魂魂", short: "魂", color: "#ee8447" },
+  { id: "hong", name: "南宏", short: "宏", color: "#2f9e5a" },  // 原本的阿宏隊，舊紀錄沿用
+  { id: "talk", name: "座談", short: "座", color: "#f2c230", ink: "#3d2e00" },
+  { id: "home", name: "家戶", short: "家", color: "#e07aa8" },  // 原本的家戶拜訪隊
 ];
 const teamById = Object.fromEntries(TEAMS.map(t => [t.id, t]));
 const teamOf = x => (teamById[x.tm] ? x.tm : "hun");
@@ -30,7 +31,7 @@ const countT = (v, id) => (state.visits[v.key] || []).filter(x => teamOf(x) === 
 // 原本地圖上的「市區」已拆成 9 個里；舊紀錄放在這個 key，等待分配
 const LEGACY = "馬公市/市區";
 const DOWNTOWN = ["光明", "中興", "長安", "中央", "復興", "啟明", "重慶", "光復", "陽明"];
-const chip = id => `<span class="tc" style="background:${teamById[id].color}">${teamById[id].short}</span>`;
+const chip = id => `<span class="tc" style="background:${teamById[id].color};color:${teamById[id].ink || "#fff"}">${teamById[id].short}</span>`;
 const $ = s => document.querySelector(s);
 
 // ===== Three.js 場景 =====
@@ -502,7 +503,7 @@ M.villages.forEach(v => { const s = document.createElement("span"); labelsEl.app
 function renderLabels() {
   labelEls.forEach((s, v) => {
     const n = count(v);
-    s.innerHTML = v.name + TEAMS.map(T => { const k = countT(v, T.id); return k ? `<span class="tc" style="background:${T.color}">${T.short}${k}</span>` : ""; }).join("");
+    s.innerHTML = v.name + TEAMS.map(T => { const k = countT(v, T.id); return k ? `<span class="tc" style="background:${T.color};color:${T.ink || "#fff"}">${T.short}${k}</span>` : ""; }).join("");
     s.classList.toggle("sel", v === selected);
     s._w = 0;
   });
@@ -521,7 +522,7 @@ function renderTownLabels() {
   townLabels.forEach(L => {
     L.el.innerHTML = `<b>${L.t}</b>` + TEAMS.map(T => {
       const k = L.vs.reduce((s, v) => s + countT(v, T.id), 0);
-      return k ? `<span class="tc" style="background:${T.color}">${T.short}${k}</span>` : "";
+      return k ? `<span class="tc" style="background:${T.color};color:${T.ink || "#fff"}">${T.short}${k}</span>` : "";
     }).join("");
     L.el._w = 0;
   });
