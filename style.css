@@ -158,3 +158,11 @@ body.night h1{color:#ffe7a8;text-shadow:none}
 .legacy li{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed #ecd9b5}
 .legacy .btn.sm{padding:4px 10px;font-size:13px}
 .legacy-note{display:none;margin:8px 0 0;font-size:13px;background:#fff3dc;border-radius:10px;padding:6px 10px}
+.btn.danger{display:block;width:100%;margin-top:16px;color:#c0394f;font-size:14px}
+.btn.danger[hidden]{display:none}
+.heat li{grid-template-columns:72px 1fr 92px}
+.heat .hbin{display:flex;height:100%;border-radius:6px;overflow:hidden;transition:width .5s}
+.heat .hbin span{display:block;height:100%}
+.heat-key{font-size:12px;color:var(--muted);margin:12px 0 0}
+.heat-key i{display:inline-block;width:12px;height:10px;border-radius:3px;vertical-align:-1px;margin-right:3px}
+.heat-key .k1{background:#3a933a}.heat-key .k2{background:#a8dc86}

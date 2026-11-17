@@ -25,6 +25,16 @@ export default async (req) => {
   if (given.trim() !== password) return json({ error: "unauthorized" }, 401);
   if (a.action === "check") return json({ ok: true });
 
+  // 清除全部紀錄（會先自動備份一份）
+  if (a.action === "reset") {
+    if (a.confirm !== "清除") return json({ error: "need confirm" }, 400);
+    const old = await load();
+    await store.setJSON("backup-" + Date.now(), old);
+    const fresh = { visits: {}, updated: Date.now() };
+    await store.setJSON(KEY, fresh);
+    return json(fresh);
+  }
+
   if (typeof a.key !== "string" || a.key.length > 40) return json({ error: "bad key" }, 400);
   const data = await load();
   data.visits ||= {};

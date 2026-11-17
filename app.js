@@ -710,27 +710,33 @@ function renderPanel() {
   });
 }
 
-// ===== 熱度統計（看去過幾個社區／地方；同一個地方去幾次都只算一個） =====
-const HEAT = `linear-gradient(90deg, ${LEVELS[0]}, ${LEVELS[2]} 40%, ${LEVELS[5]})`;
-function heatRow(label, n, max, fill) {
-  const w = max ? Math.max(n ? 4 : 0, n / max * 100) : 0;
-  return `<li>${label}<div class="hb"><div style="width:${w}%;background:${fill};background-size:${w ? 10000 / w : 100}% 100%"></div></div><span class="num">${n} 處</span></li>`;
+// ===== 熱度統計：深色＝去過幾處（範圍），淺色＝重複去的次數（加強），整條＝總次數 =====
+function heatRow(label, places, times, max, dark, light) {
+  const w = max ? Math.max(times ? 4 : 0, times / max * 100) : 0;
+  const pw = times ? places / times * 100 : 0;
+  return `<li>${label}<div class="hb"><div class="hbin" style="width:${w}%">
+      <span style="width:${pw}%;background:${dark}"></span><span style="width:${100 - pw}%;background:${light}"></span>
+    </div></div><span class="num">${places} 處・${times} 次</span></li>`;
 }
 function renderStats() {
   const places = M.villages.filter(v => count(v) > 0).length;
   $("#placeCount").textContent = places;
+  $("#resetBtn").hidden = !canEdit();
   const old = (state.visits[LEGACY] || []).length;
   $("#legacyNote").innerHTML = old ? `⚠️ 還有 ${old} 筆舊「市區」紀錄待分配，點市區任一個里（例如光復）就能移過去。` : "";
   $("#legacyNote").style.display = old ? "block" : "none";
   $("#sweepCount").textContent = M.villages.reduce((s, v) => s + count(v), 0);
-  const teamN = TEAMS.map(T => M.villages.filter(v => countT(v, T.id) > 0).length);
-  const sum = teamN.reduce((a, b) => a + b, 0);
-  $("#teamSplit").innerHTML = sum ? TEAMS.map((T, i) => teamN[i] ? `<div style="flex:${teamN[i]};background:${T.color}" title="${T.name} ${teamN[i]} 處"></div>` : "").join("") : "";
-  const tMax = Math.max(...teamN);
-  $("#teamStats").innerHTML = TEAMS.map((T, i) => heatRow(`<span class="tname"><i style="background:${T.color}"></i>${T.name}</span>`, teamN[i], tMax, T.color)).join("");
-  const townN = Object.keys(TOWNS).map(t => M.villages.filter(v => v.town === t && count(v) > 0).length);
-  const mMax = Math.max(...townN);
-  $("#towns").innerHTML = Object.keys(TOWNS).map((t, i) => heatRow(`<span>${t}</span>`, townN[i], mMax, HEAT)).join("");
+  const tP = TEAMS.map(T => M.villages.filter(v => countT(v, T.id) > 0).length);
+  const tT = TEAMS.map(T => M.villages.reduce((s, v) => s + countT(v, T.id), 0));
+  const sum = tT.reduce((a, b) => a + b, 0);
+  $("#teamSplit").innerHTML = sum ? TEAMS.map((T, i) => tT[i] ? `<div style="flex:${tT[i]};background:${T.color}" title="${T.name} ${tT[i]} 次"></div>` : "").join("") : "";
+  const tMax = Math.max(...tT);
+  $("#teamStats").innerHTML = TEAMS.map((T, i) => heatRow(`<span class="tname"><i style="background:${T.color}"></i>${T.name}</span>`, tP[i], tT[i], tMax, T.color, T.color + "55")).join("");
+  const towns = Object.keys(TOWNS);
+  const mP = towns.map(t => M.villages.filter(v => v.town === t && count(v) > 0).length);
+  const mT = towns.map(t => M.villages.filter(v => v.town === t).reduce((s, v) => s + count(v), 0));
+  const mMax = Math.max(...mT);
+  $("#towns").innerHTML = towns.map((t, i) => heatRow(`<span>${t}</span>`, mP[i], mT[i], mMax, LEVELS[4], LEVELS[1])).join("");
 }
 $("#legend").innerHTML = `<span><i style="background:${UNLIT}"></i>未掃</span>` +
   LEVELS.map((c, i) => `<span><i style="background:${c}"></i>${i + 1}${i === LEVELS.length - 1 ? "+" : ""}次</span>`).join("") +
@@ -773,6 +779,7 @@ async function load() {
   renderAll();
 }
 function applyLocal(a) {
+  if (a.action === "reset") { state = { visits: {} }; localStorage.setItem("sweepLocal", JSON.stringify(state)); return; }
   const list = state.visits[a.key] ||= [];
   if (a.action === "add") list.push({ d: a.date, t: Date.now(), tm: teamById[a.team] ? a.team : "hun" });
   if (a.action === "remove" && a.index >= 0) list.splice(a.index, 1);
@@ -781,7 +788,7 @@ function applyLocal(a) {
   localStorage.setItem("sweepLocal", JSON.stringify(state));
 }
 async function act(a) {
-  const msg = a.action === "move" ? `已移到${selected?.name || ""}` : a.action === "add" ? `💡 ${teamById[a.team]?.name || ""}在${selected?.name || ""}點燈！` : "已移除";
+  const msg = a.action === "reset" ? "已清除全部紀錄" : a.action === "move" ? `已移到${selected?.name || ""}` : a.action === "add" ? `💡 ${teamById[a.team]?.name || ""}在${selected?.name || ""}點燈！` : "已移除";
   if (mode === "local") { applyLocal(a); renderAll(); toast(msg); return; }
   setSync("busy", "儲存中");
   try {
@@ -811,7 +818,15 @@ async function checkKey(key, silent) {
   else if (!silent) localStorage.removeItem("sweepKey");
   updateEditBtn(); return unlocked;
 }
+$("#resetBtn").onclick = () => {
+  const ans = prompt("這會清除全部的掃街紀錄（四組都會歸零）。\n確定的話請輸入「清除」兩個字：");
+  if (ans === null) return;
+  if (ans.trim() !== "清除") { toast("沒有輸入「清除」，已取消"); return; }
+  selected = null;
+  act({ action: "reset", confirm: "清除" });
+};
 function updateEditBtn() {
+  $("#resetBtn").hidden = !canEdit();
   if (mode === "local") return;
   const b = $("#editBtn"); b.textContent = unlocked ? "🔓 編輯中" : "🔒 編輯"; b.classList.toggle("unlocked", unlocked);
 }
