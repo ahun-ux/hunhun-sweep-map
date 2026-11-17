@@ -24,6 +24,7 @@ const TEAMS = [
   { id: "hong", name: "南宏", short: "宏", color: "#2f9e5a" },  // 原本的阿宏隊，舊紀錄沿用
   { id: "talk", name: "座談", short: "座", color: "#f2c230", ink: "#3d2e00" },
   { id: "home", name: "家戶", short: "家", color: "#e07aa8" },  // 原本的家戶拜訪隊
+  { id: "cut", name: "義剪", short: "剪", color: "#8e5fd0" },
 ];
 const teamById = Object.fromEntries(TEAMS.map(t => [t.id, t]));
 const teamOf = x => (teamById[x.tm] ? x.tm : "hun");

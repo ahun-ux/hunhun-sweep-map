@@ -42,7 +42,7 @@ export default async (req) => {
 
   if (a.action === "add") {
     const d = /^\d{4}-\d{2}-\d{2}$/.test(a.date || "") ? a.date : new Date().toISOString().slice(0, 10);
-    const tm = ["hun", "hong", "talk", "home"].includes(a.team) ? a.team : "hun";
+    const tm = ["hun", "hong", "talk", "home", "cut"].includes(a.team) ? a.team : "hun";
     list.push({ d, t: Date.now(), tm });
   } else if (a.action === "move") {
     // 把舊紀錄（例如原本的「馬公市/市區」）搬到新的村里
