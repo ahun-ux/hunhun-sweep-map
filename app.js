@@ -680,7 +680,7 @@ function legacyBox(v) {
   const old = state.visits[LEGACY] || [];
   if (!old.length || v.town !== "馬公市" || !DOWNTOWN.includes(v.name)) return "";
   return `<div class="legacy"><p>舊「市區」紀錄還有 <b>${old.length}</b> 筆沒分配到里，屬於${v.name}里的請按「移到這裡」：</p>
-    <ul>${old.map((x, i) => `<li><span>${chip(teamOf(x))} ${x.d}</span><button class="btn sm mint" data-move="${i}" ${canEdit() ? "" : "disabled"}>移到這裡</button></li>`).join("")}</ul></div>`;
+    <ul>${old.map((x, i) => `<li><span>${chip(teamOf(x))} ${teamById[teamOf(x)].name}・第 ${i + 1} 筆</span><button class="btn sm mint" data-move="${i}" ${canEdit() ? "" : "disabled"}>移到這裡</button></li>`).join("")}</ul></div>`;
 }
 function renderPanel() {
   const el = $("#panel");
@@ -694,12 +694,11 @@ function renderPanel() {
         <button class="btn sm pink" data-minus="${T.id}" ${dis || (!k ? "disabled" : "")}>－</button>
         <b>${k}</b>
         <button class="btn sm mint" data-plus="${T.id}" ${dis}>＋</button></div>`; }).join("")}</div>
-    <div class="dateRow">日期 <input type="date" id="vdate" value="${today()}" ${dis}></div>
     ${!canEdit() ? `<p class="locked-note">🔒 按右上「編輯」解鎖才能記錄</p>` : ""}
     ${legacyBox(v)}
-    <ul class="visits">${list.map((x, i) => ({ ...x, i })).reverse().map(x =>
-      `<li><span>${chip(teamOf(x))} ${x.d}</span>${canEdit() ? `<a href="#" data-del="${x.i}" title="刪除">✕</a>` : ""}</li>`).join("")}</ul>`;
-  el.querySelectorAll("[data-plus]").forEach(b => b.onclick = () => act({ action: "add", key: v.key, team: b.dataset.plus, date: $("#vdate").value || today() }));
+    <ul class="visits">${list.map((x, i) => ({ ...x, i, k: list.slice(0, i + 1).filter(y => teamOf(y) === teamOf(x)).length })).reverse().map(x =>
+      `<li><span>${chip(teamOf(x))} ${teamById[teamOf(x)].name}・第 ${x.k} 次</span>${canEdit() ? `<a href="#" data-del="${x.i}" title="刪除">✕</a>` : ""}</li>`).join("")}</ul>`;
+  el.querySelectorAll("[data-plus]").forEach(b => b.onclick = () => act({ action: "add", key: v.key, team: b.dataset.plus, date: today() }));
   el.querySelectorAll("[data-minus]").forEach(b => b.onclick = () => {
     const id = b.dataset.minus; let idx = -1; list.forEach((x, i) => { if (teamOf(x) === id) idx = i; });
     if (idx >= 0) act({ action: "remove", key: v.key, index: idx, team: id });
