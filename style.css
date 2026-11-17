@@ -130,3 +130,10 @@ body.night h1{color:#ffe7a8;text-shadow:none}
 .teamstats li .tname{color:var(--ink)}
 .teamstats li span:not(.tname){text-align:right}
 .legend .lsep{color:var(--muted)}
+
+/* 鄉鎮合計泡泡 */
+.labels>span.town{display:none;align-items:center;gap:4px;font-size:15px;padding:6px 12px;border-radius:16px;
+  background:rgba(255,253,246,.95);box-shadow:0 3px 0 rgba(0,0,0,.15);border:2px solid var(--ink)}
+.labels>span.town b{font-weight:400}
+.labels>span.town small{color:var(--ink);font-size:13px;margin:0 3px;background:#ffe2c9;border-radius:8px;padding:0 6px}
+.labels>span.town .tc{font-size:12px;line-height:18px;padding:0 6px}

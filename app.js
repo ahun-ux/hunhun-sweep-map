@@ -505,14 +505,42 @@ function renderLabels() {
   });
 }
 const tmp = new THREE.Vector3();
+// ===== 鄉鎮合計泡泡（縮小時顯示） =====
+const townLabels = Object.keys(TOWNS).map(t => {
+  const vs = M.villages.filter(v => v.town === t);
+  const main = vs.reduce((a, b) => (b.area > a.area ? b : a));
+  const near = vs.filter(v => Math.hypot(v.cx - main.cx, v.cy - main.cy) < 30);
+  const A = near.reduce((s, v) => s + v.area, 0);
+  const el = document.createElement("span"); el.className = "town"; labelsEl.appendChild(el);
+  return { t, vs, el, x: near.reduce((s, v) => s + v.cx * v.area, 0) / A - CX, z: near.reduce((s, v) => s + v.cy * v.area, 0) / A - CZ };
+});
+function renderTownLabels() {
+  townLabels.forEach(L => {
+    L.el.innerHTML = `<b>${L.t}</b><small>${pct(L.vs, TOWN_TOTAL[L.t])}%</small>` + TEAMS.map(T => {
+      const k = L.vs.reduce((s, v) => s + countT(v, T.id), 0);
+      return k ? `<span class="tc" style="background:${T.color}">${T.short}${k}</span>` : "";
+    }).join("");
+    L.el._w = 0;
+  });
+}
+const DETAIL_DIST = 130; // 鏡頭比這個近 → 顯示村里；比這個遠 → 顯示鄉鎮合計
 function placeLabels() {
+  const zoomedOut = camera.position.distanceTo(controls.target) >= DETAIL_DIST;
+  townLabels.forEach(L => {
+    tmp.set(L.x, 6, L.z).project(camera);
+    const show = showLabels && zoomedOut && tmp.z < 1 && Math.abs(tmp.x) < 1.1 && Math.abs(tmp.y) < 1.1;
+    L.el.style.display = show ? "flex" : "none";
+    if (show) L.el.style.transform = `translate(${(tmp.x * 0.5 + 0.5) * stage.clientWidth}px,${(-tmp.y * 0.5 + 0.5) * stage.clientHeight}px) translate(-50%,-100%)`;
+  });
+  placeVillageLabels(zoomedOut);
+}
+function placeVillageLabels(zoomedOut) {
   const w = stage.clientWidth, h = stage.clientHeight;
-  const detail = camera.position.distanceTo(controls.target) < 150;
   const order = [...labelEls.keys()].sort((a, b) => (b === selected) - (a === selected) || count(b) - count(a) || b.area - a.area);
   const placed = [];
   for (const v of order) {
     const s = labelEls.get(v);
-    const want = v === selected || (showLabels && (detail || count(v) > 0 || v.area > 120));
+    const want = v === selected || (showLabels && !zoomedOut);
     tmp.set(v.cx - CX, 0.2 + v.h + (v === selected ? 9 : 2.6), v.cy - CZ).project(camera);
     if (!want || tmp.z > 1 || Math.abs(tmp.x) > 1.1 || Math.abs(tmp.y) > 1.1) { s.style.display = "none"; continue; }
     const x = (tmp.x * 0.5 + 0.5) * w, y = (-tmp.y * 0.5 + 0.5) * h;
@@ -671,32 +699,33 @@ function renderPanel() {
   });
 }
 
+// ===== 百分比統計（依實際村里數） =====
+// 地圖上有些區塊包含好幾個村里：市區＝9 里（復興、長安、中央、啟明、重慶、中興、光復、光明、陽明）、
+// 望安＝4 村（東安、西安、中社、水垵）、七美＝6 村；西吉嶼是無人島不計
+const TOWN_TOTAL = { "馬公市": 33, "湖西鄉": 22, "白沙鄉": 15, "西嶼鄉": 11, "望安鄉": 9, "七美鄉": 6 };
+const WEIGHT = { "馬公市/市區": 9, "望安鄉/望安": 4, "七美鄉/七美": 6, "望安鄉/西吉": 0 };
+const weight = v => WEIGHT[v.key] ?? 1;
+const ALL_TOTAL = Object.values(TOWN_TOTAL).reduce((a, b) => a + b, 0);
+const pct = (vs, total, has = v => count(v) > 0) => Math.round(vs.filter(has).reduce((s, v) => s + weight(v), 0) / total * 100);
 function renderStats() {
-  const all = M.villages.length, lit = M.villages.filter(v => count(v) > 0).length;
-  $("#litCount").textContent = lit; $("#allCount").textContent = all;
+  const p = pct(M.villages, ALL_TOTAL);
+  $("#litPct").textContent = p;
   $("#sweepCount").textContent = M.villages.reduce((s, v) => s + count(v), 0);
-  $("#totalBar").style.width = (lit / all * 100) + "%";
+  $("#totalBar").style.width = p + "%";
   $("#towns").innerHTML = Object.keys(TOWNS).map(t => {
-    const vs = M.villages.filter(v => v.town === t), l = vs.filter(v => count(v) > 0).length;
-    return `<li><span>${t}</span><div class="tb"><div style="width:${l / vs.length * 100}%;--c:${TOWNS[t]}"></div></div><span class="num">${l}/${vs.length}</span></li>`;
+    const q = pct(M.villages.filter(v => v.town === t), TOWN_TOTAL[t]);
+    return `<li><span>${t}</span><div class="tb"><div style="width:${q}%;--c:${TOWNS[t]}"></div></div><span class="num">${q}%</span></li>`;
   }).join("");
   $("#teamStats").innerHTML = TEAMS.map(T => {
-    const vs = M.villages.filter(v => countT(v, T.id) > 0).length, sw = M.villages.reduce((s, v) => s + countT(v, T.id), 0);
-    return `<li><span class="tname"><i style="background:${T.color}"></i>${T.name}</span><span>${vs} 村里</span><span>${sw} 次</span></li>`;
+    const q = pct(M.villages, ALL_TOTAL, v => countT(v, T.id) > 0), sw = M.villages.reduce((s, v) => s + countT(v, T.id), 0);
+    return `<li><span class="tname"><i style="background:${T.color}"></i>${T.name}</span><span>${q}%</span><span>${sw} 次</span></li>`;
   }).join("");
-  const rec = [];
-  M.villages.forEach(v => (state.visits[v.key] || []).forEach((x, i) => rec.push({ v, ...x, i })));
-  rec.sort((a, b) => (b.t || 0) - (a.t || 0) || b.d.localeCompare(a.d));
-  $("#recent").innerHTML = rec.length ? rec.slice(0, 40).map(r =>
-    `<li data-k="${r.v.id}"><span>${chip(teamOf(r))} ${r.v.name}</span><small>${r.d}</small></li>`).join("")
-    : `<li class="empty">還沒有紀錄，出發掃街吧！</li>`;
-  $("#recent").querySelectorAll("[data-k]").forEach(li => li.onclick = () => select(byId[li.dataset.k]));
 }
 $("#legend").innerHTML = `<span><i style="background:${UNLIT}"></i>未掃</span>` +
   LEVELS.map((c, i) => `<span><i style="background:${c}"></i>${i + 1}${i === LEVELS.length - 1 ? "+" : ""}次</span>`).join("") +
   `<span class="lsep">合計｜旗子＝</span>` + TEAMS.map(T => `<span><i style="background:${T.color}"></i>${T.name}</span>`).join("");
 
-function renderAll() { refreshAll(); renderStats(); renderLabels(); renderPanel(); updateHun(); }
+function renderAll() { refreshAll(); renderStats(); renderLabels(); renderTownLabels(); renderPanel(); updateHun(); }
 
 // 搜尋
 const search = $("#search"), results = $("#results");
