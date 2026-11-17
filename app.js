@@ -27,6 +27,9 @@ const TEAMS = [
 const teamById = Object.fromEntries(TEAMS.map(t => [t.id, t]));
 const teamOf = x => (teamById[x.tm] ? x.tm : "hun");
 const countT = (v, id) => (state.visits[v.key] || []).filter(x => teamOf(x) === id).length;
+// 原本地圖上的「市區」已拆成 9 個里；舊紀錄放在這個 key，等待分配
+const LEGACY = "馬公市/市區";
+const DOWNTOWN = ["光明", "中興", "長安", "中央", "復興", "啟明", "重慶", "光復", "陽明"];
 const chip = id => `<span class="tc" style="background:${teamById[id].color}">${teamById[id].short}</span>`;
 const $ = s => document.querySelector(s);
 
@@ -373,7 +376,7 @@ function latestHun() {
 // 有新的魂魂隊紀錄 → 跳過去；其他時候自由閒逛
 function updateHun() {
   const [v, t] = latestHun();
-  const home = v || vByName("市區");
+  const home = v || vByName("光復");
   if (!hunReady) {
     hunReady = true; lastHunT = t;
     hunA.pos.set(home.cx - CX, 0, home.cy - CZ); hunA.gy = groundAt(hunA.pos.x, hunA.pos.z, 2.4);
@@ -516,7 +519,7 @@ const townLabels = Object.keys(TOWNS).map(t => {
 });
 function renderTownLabels() {
   townLabels.forEach(L => {
-    L.el.innerHTML = `<b>${L.t}</b><small>${pct(L.vs, TOWN_TOTAL[L.t])}%</small>` + TEAMS.map(T => {
+    L.el.innerHTML = `<b>${L.t}</b>` + TEAMS.map(T => {
       const k = L.vs.reduce((s, v) => s + countT(v, T.id), 0);
       return k ? `<span class="tc" style="background:${T.color}">${T.short}${k}</span>` : "";
     }).join("");
@@ -673,6 +676,12 @@ function select(v, move = true) {
   if (selected && move && innerWidth <= 900) $("#stage").scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
+function legacyBox(v) {
+  const old = state.visits[LEGACY] || [];
+  if (!old.length || v.town !== "馬公市" || !DOWNTOWN.includes(v.name)) return "";
+  return `<div class="legacy"><p>舊「市區」紀錄還有 <b>${old.length}</b> 筆沒分配到里，屬於${v.name}里的請按「移到這裡」：</p>
+    <ul>${old.map((x, i) => `<li><span>${chip(teamOf(x))} ${x.d}</span><button class="btn sm mint" data-move="${i}" ${canEdit() ? "" : "disabled"}>移到這裡</button></li>`).join("")}</ul></div>`;
+}
 function renderPanel() {
   const el = $("#panel");
   if (!selected) { el.innerHTML = `<p class="hint">點島上的村里，或用下面搜尋。</p>`; return; }
@@ -687,6 +696,7 @@ function renderPanel() {
         <button class="btn sm mint" data-plus="${T.id}" ${dis}>＋</button></div>`; }).join("")}</div>
     <div class="dateRow">日期 <input type="date" id="vdate" value="${today()}" ${dis}></div>
     ${!canEdit() ? `<p class="locked-note">🔒 按右上「編輯」解鎖才能記錄</p>` : ""}
+    ${legacyBox(v)}
     <ul class="visits">${list.map((x, i) => ({ ...x, i })).reverse().map(x =>
       `<li><span>${chip(teamOf(x))} ${x.d}</span>${canEdit() ? `<a href="#" data-del="${x.i}" title="刪除">✕</a>` : ""}</li>`).join("")}</ul>`;
   el.querySelectorAll("[data-plus]").forEach(b => b.onclick = () => act({ action: "add", key: v.key, team: b.dataset.plus, date: $("#vdate").value || today() }));
@@ -694,32 +704,33 @@ function renderPanel() {
     const id = b.dataset.minus; let idx = -1; list.forEach((x, i) => { if (teamOf(x) === id) idx = i; });
     if (idx >= 0) act({ action: "remove", key: v.key, index: idx, team: id });
   });
+  el.querySelectorAll("[data-move]").forEach(b => b.onclick = () => act({ action: "move", from: LEGACY, index: +b.dataset.move, key: v.key }));
   el.querySelectorAll("[data-del]").forEach(a => a.onclick = e => {
     e.preventDefault(); if (confirm("刪除這筆紀錄？")) act({ action: "remove", key: v.key, index: +a.dataset.del });
   });
 }
 
-// ===== 百分比統計（依實際村里數） =====
-// 地圖上有些區塊包含好幾個村里：市區＝9 里（復興、長安、中央、啟明、重慶、中興、光復、光明、陽明）、
-// 望安＝4 村（東安、西安、中社、水垵）、七美＝6 村；西吉嶼是無人島不計
-const TOWN_TOTAL = { "馬公市": 33, "湖西鄉": 22, "白沙鄉": 15, "西嶼鄉": 11, "望安鄉": 9, "七美鄉": 6 };
-const WEIGHT = { "馬公市/市區": 9, "望安鄉/望安": 4, "七美鄉/七美": 6, "望安鄉/西吉": 0 };
-const weight = v => WEIGHT[v.key] ?? 1;
-const ALL_TOTAL = Object.values(TOWN_TOTAL).reduce((a, b) => a + b, 0);
-const pct = (vs, total, has = v => count(v) > 0) => Math.round(vs.filter(has).reduce((s, v) => s + weight(v), 0) / total * 100);
+// ===== 熱度統計（看去過幾個社區／地方；同一個地方去幾次都只算一個） =====
+const HEAT = `linear-gradient(90deg, ${LEVELS[0]}, ${LEVELS[2]} 40%, ${LEVELS[5]})`;
+function heatRow(label, n, max, fill) {
+  const w = max ? Math.max(n ? 4 : 0, n / max * 100) : 0;
+  return `<li>${label}<div class="hb"><div style="width:${w}%;background:${fill};background-size:${w ? 10000 / w : 100}% 100%"></div></div><span class="num">${n} 處</span></li>`;
+}
 function renderStats() {
-  const p = pct(M.villages, ALL_TOTAL);
-  $("#litPct").textContent = p;
+  const places = M.villages.filter(v => count(v) > 0).length;
+  $("#placeCount").textContent = places;
+  const old = (state.visits[LEGACY] || []).length;
+  $("#legacyNote").innerHTML = old ? `⚠️ 還有 ${old} 筆舊「市區」紀錄待分配，點市區任一個里（例如光復）就能移過去。` : "";
+  $("#legacyNote").style.display = old ? "block" : "none";
   $("#sweepCount").textContent = M.villages.reduce((s, v) => s + count(v), 0);
-  $("#totalBar").style.width = p + "%";
-  $("#towns").innerHTML = Object.keys(TOWNS).map(t => {
-    const q = pct(M.villages.filter(v => v.town === t), TOWN_TOTAL[t]);
-    return `<li><span>${t}</span><div class="tb"><div style="width:${q}%;--c:${TOWNS[t]}"></div></div><span class="num">${q}%</span></li>`;
-  }).join("");
-  $("#teamStats").innerHTML = TEAMS.map(T => {
-    const q = pct(M.villages, ALL_TOTAL, v => countT(v, T.id) > 0), sw = M.villages.reduce((s, v) => s + countT(v, T.id), 0);
-    return `<li><span class="tname"><i style="background:${T.color}"></i>${T.name}</span><span>${q}%</span><span>${sw} 次</span></li>`;
-  }).join("");
+  const teamN = TEAMS.map(T => M.villages.filter(v => countT(v, T.id) > 0).length);
+  const sum = teamN.reduce((a, b) => a + b, 0);
+  $("#teamSplit").innerHTML = sum ? TEAMS.map((T, i) => teamN[i] ? `<div style="flex:${teamN[i]};background:${T.color}" title="${T.name} ${teamN[i]} 處"></div>` : "").join("") : "";
+  const tMax = Math.max(...teamN);
+  $("#teamStats").innerHTML = TEAMS.map((T, i) => heatRow(`<span class="tname"><i style="background:${T.color}"></i>${T.name}</span>`, teamN[i], tMax, T.color)).join("");
+  const townN = Object.keys(TOWNS).map(t => M.villages.filter(v => v.town === t && count(v) > 0).length);
+  const mMax = Math.max(...townN);
+  $("#towns").innerHTML = Object.keys(TOWNS).map((t, i) => heatRow(`<span>${t}</span>`, townN[i], mMax, HEAT)).join("");
 }
 $("#legend").innerHTML = `<span><i style="background:${UNLIT}"></i>未掃</span>` +
   LEVELS.map((c, i) => `<span><i style="background:${c}"></i>${i + 1}${i === LEVELS.length - 1 ? "+" : ""}次</span>`).join("") +
@@ -765,11 +776,12 @@ function applyLocal(a) {
   const list = state.visits[a.key] ||= [];
   if (a.action === "add") list.push({ d: a.date, t: Date.now(), tm: teamById[a.team] ? a.team : "hun" });
   if (a.action === "remove" && a.index >= 0) list.splice(a.index, 1);
+  if (a.action === "move") { const src = state.visits[a.from] || []; if (a.index >= 0 && a.index < src.length) { list.push(src.splice(a.index, 1)[0]); list.sort((x, y) => (x.t || 0) - (y.t || 0)); } if (!src.length) delete state.visits[a.from]; }
   if (!list.length) delete state.visits[a.key];
   localStorage.setItem("sweepLocal", JSON.stringify(state));
 }
 async function act(a) {
-  const msg = a.action === "add" ? `💡 ${teamById[a.team]?.name || ""}在${selected?.name || ""}點燈！` : "已移除";
+  const msg = a.action === "move" ? `已移到${selected?.name || ""}` : a.action === "add" ? `💡 ${teamById[a.team]?.name || ""}在${selected?.name || ""}點燈！` : "已移除";
   if (mode === "local") { applyLocal(a); renderAll(); toast(msg); return; }
   setSync("busy", "儲存中");
   try {

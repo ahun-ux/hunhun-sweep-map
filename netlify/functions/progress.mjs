@@ -34,6 +34,13 @@ export default async (req) => {
     const d = /^\d{4}-\d{2}-\d{2}$/.test(a.date || "") ? a.date : new Date().toISOString().slice(0, 10);
     const tm = ["hun", "hong", "home"].includes(a.team) ? a.team : "hun";
     list.push({ d, t: Date.now(), tm });
+  } else if (a.action === "move") {
+    // 把舊紀錄（例如原本的「馬公市/市區」）搬到新的村里
+    if (typeof a.from !== "string" || a.from.length > 40 || a.from === a.key) return json({ error: "bad from" }, 400);
+    const src = data.visits[a.from] || [];
+    const i = Number.isInteger(a.index) ? a.index : -1;
+    if (i >= 0 && i < src.length) { list.push(src.splice(i, 1)[0]); list.sort((x, y) => (x.t || 0) - (y.t || 0)); }
+    if (!src.length) delete data.visits[a.from];
   } else if (a.action === "remove") {
     const i = Number.isInteger(a.index) ? a.index : list.length - 1;
     if (i >= 0 && i < list.length) list.splice(i, 1);

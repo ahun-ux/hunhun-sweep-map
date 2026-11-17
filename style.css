@@ -137,3 +137,24 @@ body.night h1{color:#ffe7a8;text-shadow:none}
 .labels>span.town b{font-weight:400}
 .labels>span.town small{color:var(--ink);font-size:13px;margin:0 3px;background:#ffe2c9;border-radius:8px;padding:0 6px}
 .labels>span.town .tc{font-size:12px;line-height:18px;padding:0 6px}
+
+/* 熱度條 */
+.stats{display:block}
+.stats .big-stat small{font-size:16px}
+.split{display:flex;height:12px;border-radius:6px;overflow:hidden;background:#ebe6d8;margin:10px 0 4px}
+.split>div{height:100%}
+.stats h4{margin:14px 0 8px;font-size:13px;font-weight:400;color:var(--muted)}
+.heat{list-style:none;padding:0;margin:0;display:flex;flex-direction:column;gap:8px}
+.heat li{display:grid;grid-template-columns:96px 1fr 58px;align-items:center;gap:8px;font-size:14px}
+.heat .hb{height:12px;border-radius:6px;background:#ebe6d8;overflow:hidden}
+.heat .hb>div{height:100%;border-radius:6px;transition:width .5s}
+.heat .num{text-align:right;color:var(--muted)}
+.big-row{display:flex;justify-content:space-between;align-items:flex-end;gap:10px}
+.big-stat.sub div{font-size:22px;text-align:right}
+.big-stat.sub label{display:block;text-align:right}
+.legacy{background:#fff3dc;border-radius:14px;padding:10px 12px;margin:8px 0;font-size:13px}
+.legacy p{margin:0 0 6px}
+.legacy ul{list-style:none;padding:0;margin:0;max-height:180px;overflow:auto}
+.legacy li{display:flex;justify-content:space-between;align-items:center;padding:4px 0;border-bottom:1px dashed #ecd9b5}
+.legacy .btn.sm{padding:4px 10px;font-size:13px}
+.legacy-note{display:none;margin:8px 0 0;font-size:13px;background:#fff3dc;border-radius:10px;padding:6px 10px}

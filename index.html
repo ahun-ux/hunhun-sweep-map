@@ -41,11 +41,16 @@
     </div>
 
     <div class="card stats">
-      <div class="big-stat"><div><span id="litPct">0</span><small>%</small></div><label>全澎湖完成度</label></div>
-      <div class="big-stat"><div><span id="sweepCount">0</span></div><label>掃街總次數</label></div>
-      <div class="bar"><div id="totalBar"></div></div>
-      <ul class="teamstats" id="teamStats"></ul>
-      <ul class="towns" id="towns"></ul>
+      <div class="big-row">
+        <div class="big-stat"><div><span id="placeCount">0</span><small>個地方</small></div><label>已去過的社區／地方</label></div>
+        <div class="big-stat sub"><div><span id="sweepCount">0</span><small>次</small></div><label>掃街總次數</label></div>
+      </div>
+      <p class="legacy-note" id="legacyNote"></p>
+      <div class="split" id="teamSplit" title="三隊各佔的比例"></div>
+      <h4>各隊熱度</h4>
+      <ul class="heat" id="teamStats"></ul>
+      <h4>各鄉鎮熱度</h4>
+      <ul class="heat" id="towns"></ul>
     </div>
   </aside>
 </main>
